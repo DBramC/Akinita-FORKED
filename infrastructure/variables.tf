@@ -1,20 +1,9 @@
-variable "vpc_cidr" {
-  description = "The CIDR block for the VPC"
-  default     = "10.0.0.0/16"
-}
+variable "aws_region" { default = "us-east-1" }
+variable "app_name" { default = "akinita" }
+variable "cpu" { default = "1024" }
+variable "memory" { default = "2048" }
+variable "container_port" { default = 8080 }
 
-variable "db_password" {
-  description = "Database password"
-  type        = string
-  sensitive   = true
-}
-
-variable "db_username" {
-  description = "Database username"
-  type        = string
-}
-
-variable "db_host" {
-  description = "Database host"
-  type        = string
-}
+variable "db_url" { type = string }
+variable "db_username" { type = string }
+variable "db_password" { type = string, sensitive = true }

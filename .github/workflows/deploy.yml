@@ -1,11 +1,14 @@
-name: CI/CD Pipeline
+name: Deploy Spring Boot Application
 
 on:
   push:
-    branches: [main, master]
+    branches:
+      - main
+      - master
 
 env:
-  IMAGE_NAME: ghcr.io/${{ github.repository }}:latest
+  JAVA_VERSION: '21'
+  REGISTRY: ghcr.io
 
 jobs:
   build-and-push:
@@ -14,14 +17,18 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Set up JDK 21
+      - name: Set lower case repository name
+        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
+      - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: '21'
+          java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
-          cache: maven
+          cache: 'maven'
 
       - name: Build with Maven
         run: mvn clean package -DskipTests
@@ -29,17 +36,17 @@ jobs:
       - name: Create Dockerfile
         run: |
           cat <<EOF > Dockerfile
-          FROM eclipse-temurin:21-jre-jammy
-          RUN useradd -m spring-app-user
+          FROM eclipse-temurin:21-jre-alpine
+          RUN addgroup -S spring && adduser -S spring-app-user -G spring
           USER spring-app-user
           COPY target/*.jar app.jar
-          ENTRYPOINT ["java", "-Xms512m", "-Xmx768m", "-XX:+UseG1GC", "-jar", "/app.jar"]
+          ENTRYPOINT ["java", "-Xms512m", "-Xmx1024m", "-XX:+UseG1GC", "-jar", "/app.jar"]
           EOF
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -48,16 +55,38 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ env.IMAGE_NAME }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
-  deploy:
+  deploy-to-ecs:
     needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy to AWS ECS Fargate
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Download task definition
+        run: aws ecs describe-task-definition --task-definition akinita --query taskDefinition > task-definition.json
+
+      - name: Fill in the new image ID in the Amazon ECS task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: akinita-container
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          environment-variables: |
+            SPRING_DATASOURCE_URL=${{ secrets.DB_URL }}
+            SPRING_DATASOURCE_USERNAME=${{ secrets.DB_USERNAME }}
+            SPRING_DATASOURCE_PASSWORD=${{ secrets.DB_PASSWORD }}
+
+      - name: Deploy Amazon ECS task definition
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
-          task-definition: aws/task-definition.json
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
           service: akinita-service
           cluster: akinita-cluster
           wait-for-service-stability: true
