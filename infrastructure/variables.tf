@@ -1,9 +1,34 @@
-variable "aws_region" { default = "us-east-1" }
-variable "app_name" { default = "akinita" }
-variable "cpu" { default = "1024" }
-variable "memory" { default = "2048" }
-variable "container_port" { default = 8080 }
+variable "vpc_id" {
+  description = "VPC ID"
+  type        = string
+}
 
-variable "db_url" { type = string }
-variable "db_username" { type = string }
-variable "db_password" { type = string, sensitive = true }
+variable "subnet_ids" {
+  description = "List of subnet IDs"
+  type        = list(string)
+}
+
+variable "execution_role_arn" {
+  description = "IAM Role for ECS Execution"
+  type        = string
+}
+
+variable "image_url" {
+  description = "ECR or Registry image path"
+  type        = string
+}
+
+variable "db_url" {
+  type      = string
+  sensitive = true
+}
+
+variable "db_user" {
+  type      = string
+  sensitive = true
+}
+
+variable "db_pass" {
+  type      = string
+  sensitive = true
+}
