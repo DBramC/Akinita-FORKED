@@ -1,22 +1,18 @@
-name: Deploy Application
+name: Deploy Akinita
 
 on:
   push:
     branches:
       - main
-      - master
-
-env:
-  REGISTRY: ghcr.io
 
 jobs:
-  build-and-push:
+  build-and-deploy:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up JDK 21
@@ -26,25 +22,16 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
+      - name: Set lower case repository name
+        run: echo "IMAGE_NAME=$(echo ${GITHUB_REPOSITORY,,})" >> $GITHUB_ENV
+
       - name: Build with Maven
         run: mvn clean package -DskipTests
 
-      - name: Set lower case repository name
-        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
-
-      - name: Create Dockerfile
-        run: |
-          cat <<EOF > Dockerfile
-          FROM eclipse-temurin:21-jre-jammy
-          WORKDIR /app
-          COPY target/*.jar app.jar
-          ENTRYPOINT ["java", "-Xms512m", "-Xmx768m", "-XX:+UseG1GC", "-jar", "app.jar"]
-          EOF
-
-      - name: Log in to the Container registry
+      - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -53,19 +40,22 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          tags: ghcr.io/${{ env.IMAGE_NAME }}:latest
 
-  deploy:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    steps:
-      - name: Set lower case repository name
-        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
-
-      - name: Deploy to AWS ECS Fargate
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+      - name: Deploy to VM
+        uses: appleboy/ssh-action@v1.0.3
         with:
-          task-definition: task-definition.json
-          service: akinita-service
-          cluster: akinita-cluster
-          wait-for-service-stability: true
+          host: ${{ secrets.VM_HOST }}
+          username: ec2-user
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            docker pull ghcr.io/${{ env.IMAGE_NAME }}:latest
+            docker stop app || true
+            docker rm app || true
+            docker run -d --name app --restart unless-stopped \
+              -p 8080:8080 \
+              -e SPRING_DATASOURCE_URL='${{ secrets.DB_URL }}' \
+              -e SPRING_DATASOURCE_USERNAME='${{ secrets.DB_USERNAME }}' \
+              -e SPRING_DATASOURCE_PASSWORD='${{ secrets.DB_PASSWORD }}' \
+              ghcr.io/${{ env.IMAGE_NAME }}:latest

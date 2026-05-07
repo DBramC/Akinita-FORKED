@@ -1,0 +1,42 @@
+- name: Provision Docker Production Host
+  hosts: docker_hosts
+  become: true
+  vars_files:
+    - vars.yml
+  tasks:
+    - name: Update package cache
+      package:
+        update_cache: yes
+        state: latest
+
+    - name: Install Docker
+      package:
+        name: ["docker"]
+        state: present
+
+    - name: Ensure execution user exists
+      user:
+        name: "{{ execution_user }}"
+        shell: /bin/bash
+
+    - name: Add user to docker group
+      user:
+        name: "{{ execution_user }}"
+        groups: docker
+        append: yes
+
+    - name: Enable and start Docker service
+      systemd:
+        name: docker
+        enabled: yes
+        state: started
+
+    - name: Configure UFW
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - "22"
+        - "{{ target_container_port }}"
+      ignore_errors: yes

@@ -1,34 +1,16 @@
-variable "vpc_id" {
-  description = "VPC ID"
+variable "region" {
+  default = "us-east-1"
+}
+
+variable "vpc_cidr" {
+  default = "10.0.0.0/16"
+}
+
+variable "ssh_public_key" {
+  description = "Public key for EC2 access"
   type        = string
 }
 
-variable "subnet_ids" {
-  description = "List of subnet IDs"
-  type        = list(string)
-}
-
-variable "execution_role_arn" {
-  description = "IAM Role for ECS Execution"
-  type        = string
-}
-
-variable "image_url" {
-  description = "ECR or Registry image path"
-  type        = string
-}
-
-variable "db_url" {
-  type      = string
-  sensitive = true
-}
-
-variable "db_user" {
-  type      = string
-  sensitive = true
-}
-
-variable "db_pass" {
-  type      = string
-  sensitive = true
+variable "instance_type" {
+  default = "t3.medium"
 }
